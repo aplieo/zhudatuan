@@ -1,4 +1,5 @@
 import type { OperationDatabase } from '../../../../foundation/application/ModuleOperations';
+import { returnedRow } from '../../../../foundation/persistence/ReturningRow';
 
 export class OrderPort {
   async paymentState(database: OperationDatabase, order: string): Promise<string> {
@@ -11,31 +12,31 @@ export class OrderPort {
   async markAuthorizing(database: OperationDatabase, order: string): Promise<void> {
     const changed = await database.query(`update ordering.orderrecord set payment_state='authorizing',version=version+1,updated_at=clock_timestamp()
       where id=$1 and payment_state='unpaid' returning id`, [order]);
-    if (!changed.rows[0]) throw new Error('ORDER_PAYMENT_STATE_CONFLICT');
+    returnedRow(changed, 'ORDER_PAYMENT_STATE_CONFLICT');
   }
 
   async markPaid(database: OperationDatabase, order: string): Promise<void> {
     const changed = await database.query(`update ordering.orderrecord set payment_state='paid',lifecycle_state='active',fulfillment_state='allocated',
       version=version+1,updated_at=clock_timestamp() where id=$1 and payment_state in('unpaid','authorizing') returning id`, [order]);
-    if (!changed.rows[0]) throw new Error('ORDER_PAYMENT_STATE_CONFLICT');
+    returnedRow(changed, 'ORDER_PAYMENT_STATE_CONFLICT');
   }
 
   async markLatePaid(database: OperationDatabase, order: string): Promise<void> {
     const changed = await database.query(`update ordering.orderrecord set payment_state='paid',version=version+1,updated_at=clock_timestamp()
       where id=$1 returning id`, [order]);
-    if (!changed.rows[0]) throw new Error('ORDER_NOT_FOUND');
+    returnedRow(changed, 'ORDER_NOT_FOUND');
   }
 
   async cancelUnpaid(database: OperationDatabase, order: string): Promise<void> {
     const changed = await database.query(`update ordering.orderrecord set lifecycle_state='cancelled',fulfillment_state='cancelled',
       version=version+1,updated_at=clock_timestamp() where id=$1 and payment_state in('unpaid','authorizing') returning id`, [order]);
-    if (!changed.rows[0]) throw new Error('ORDER_PAYMENT_STATE_CONFLICT');
+    returnedRow(changed, 'ORDER_PAYMENT_STATE_CONFLICT');
   }
 
   async resetPayment(database: OperationDatabase, order: string): Promise<void> {
     const changed = await database.query(`update ordering.orderrecord set payment_state='unpaid',version=version+1,updated_at=clock_timestamp()
       where id=$1 and payment_state='authorizing' returning id`, [order]);
-    if (!changed.rows[0]) throw new Error('ORDER_PAYMENT_STATE_CONFLICT');
+    returnedRow(changed, 'ORDER_PAYMENT_STATE_CONFLICT');
   }
 
   async startAftersaleRefund(database: OperationDatabase, aftersale: string): Promise<void> {
@@ -43,7 +44,7 @@ export class OrderPort {
       update ordering.aftersale set state='processing',version=version+1,updated_at=clock_timestamp()
       where id=$1 and state='approved' returning id)
       select id from transitioned union all select id from ordering.aftersale where id=$1 and state='processing' limit 1`, [aftersale]);
-    if (!changed.rows[0]) throw new Error('AFTERSALE_STATE_CONFLICT');
+    returnedRow(changed, 'AFTERSALE_STATE_CONFLICT');
   }
 
   async markRefunded(database: OperationDatabase, input: Readonly<{ order: string; refundedMinor: number; capturedMinor: number;
@@ -51,7 +52,7 @@ export class OrderPort {
     const changed = await database.query(`update ordering.orderrecord set payment_state=case when $2::bigint=$3::bigint then 'refunded' else 'partially_refunded' end,
       aftersale_state=case when $4::text is null then aftersale_state else 'resolved' end,version=version+1,updated_at=clock_timestamp()
       where id=$1 returning id`, [input.order, input.refundedMinor, input.capturedMinor, input.aftersale]);
-    if (!changed.rows[0]) throw new Error('ORDER_NOT_FOUND');
+    returnedRow(changed, 'ORDER_NOT_FOUND');
     if (input.aftersale) await database.query(`update ordering.aftersale set state='completed',version=version+1,updated_at=clock_timestamp()
       where id=$1 and state in('approved','processing')`, [input.aftersale]);
   }

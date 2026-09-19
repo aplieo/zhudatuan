@@ -9,6 +9,7 @@ import {
 } from '@shop/contract';
 import { validateMemberCustomFieldValue, validateMemberProfileConfig } from '@shop/l-kernel/member-profile';
 import { requireAccess, type OperationActions, type OperationDatabase } from '../../../foundation/application/ModuleOperations';
+import { returnedRow } from '../../../foundation/persistence/ReturningRow';
 import type { OperationRequest } from '../../../foundation/application/OperationHandler';
 import { bodyRecord } from '../../../foundation/interface/Validation';
 
@@ -116,7 +117,7 @@ async function saveProfile(database: OperationDatabase, scope: string, membershi
       select $1,$2,id from member.storefrontcustomtag where organization_id=$1 and id=$3 and enabled returning tag_id`,
       [scope, membership, tag]
     );
-    if (!result.rows[0]) throw new Error('CUSTOM_PROFILE_CONFIGURATION_STALE');
+    returnedRow(result, 'CUSTOM_PROFILE_CONFIGURATION_STALE');
   }
   await database.query('delete from member.storefrontmemberfieldvalue where organization_id=$1 and membership_id=$2', [scope, membership]);
   for (const item of update.custom_field_values)
